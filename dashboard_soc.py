@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import json
 
 # --- Configuración de la Página de Streamlit ---
 st.set_page_config(
@@ -15,15 +16,26 @@ st.set_page_config(
 def fetch_wazuh_data():
     """
     Se conecta a la API de Wazuh CTI para obtener los últimos indicadores.
-    Maneja errores si la API no responde.
+    Maneja errores si la API no responde o devuelve datos inválidos.
     """
     url = "https://jh.live/wazuh-cti/api/indicators/"
     try:
         response = requests.get(url, timeout=15)
-        response.raise_for_status()
+        response.raise_for_status()  # Lanza un error para códigos de estado HTTP malos (4xx o 5xx)
+
+        # Comprueba si la respuesta tiene contenido antes de intentar decodificarla
+        if not response.text:
+            st.warning("La API de Wazuh CTI ha devuelto una respuesta vacía. Puede que esté temporalmente no disponible.")
+            return None
+        
+        # Intenta decodificar el JSON
         return response.json()
+
+    except json.JSONDecodeError:
+        st.error("Error al decodificar la respuesta de la API de Wazuh CTI. La API no devolvió un JSON válido.")
+        return None
     except requests.exceptions.RequestException as e:
-        st.error(f"Error al conectar con la API de Wazuh CTI: {e}")
+        st.error(f"Error de conexión con la API de Wazuh CTI: {e}")
         return None
 
 def analizar_con_web_check(indicator, api_key):
@@ -161,3 +173,4 @@ if data:
         st.warning("Las columnas 'type' o 'value' no se encuentran en los datos para el análisis.")
 else:
     st.warning("No se pudieron cargar los datos de Wazuh CTI. Inténtalo de nuevo más tarde.")
+
