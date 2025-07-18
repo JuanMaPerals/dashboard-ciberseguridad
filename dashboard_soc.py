@@ -12,31 +12,37 @@ st.set_page_config(
 
 # --- Funciones de Lógica de la Aplicación ---
 
-@st.cache_data(ttl=600) # Cachea los datos por 10 minutos (600 segundos)
+def get_fallback_data():
+    """
+    Devuelve una lista predefinida de diccionarios como datos de respaldo.
+    Esto se usa cuando la API en vivo no está disponible.
+    """
+    st.warning("La API de Wazuh CTI no está disponible en este momento. Se han cargado datos de ejemplo locales para la demostración.")
+    return [
+      { "value": "185.191.171.12", "type": "ipv4", "first_seen": "2025-07-18T10:00:00Z", "source": "abuse.ch" },
+      { "value": "bad-domain-example.com", "type": "domain", "first_seen": "2025-07-18T09:30:00Z", "source": "urlhaus.abuse.ch" },
+      { "value": "http://malicious-example.com/phishing.html", "type": "url", "first_seen": "2025-07-18T09:00:00Z", "source": "urlhaus.abuse.ch" },
+      { "value": "d41d8cd98f00b204e9800998ecf8427e", "type": "hash.md5", "first_seen": "2025-07-18T08:30:00Z", "source": "virustotal.com" },
+      { "value": "another-bad-domain.net", "type": "domain", "first_seen": "2025-07-18T11:00:00Z", "source": "abuse.ch" }
+    ]
+
+@st.cache_data(ttl=600) # Cachea los datos por 10 minutos
 def fetch_wazuh_data():
     """
-    Se conecta a la API de Wazuh CTI para obtener los últimos indicadores.
-    Maneja errores si la API no responde o devuelve datos inválidos.
+    Intenta obtener datos en vivo de la API de Wazuh CTI.
+    Si falla, devuelve los datos de respaldo locales.
     """
     url = "https://jh.live/wazuh-cti/api/indicators/"
     try:
         response = requests.get(url, timeout=15)
-        response.raise_for_status()  # Lanza un error para códigos de estado HTTP malos (4xx o 5xx)
-
-        # Comprueba si la respuesta tiene contenido antes de intentar decodificarla
-        if not response.text:
-            st.warning("La API de Wazuh CTI ha devuelto una respuesta vacía. Puede que esté temporalmente no disponible.")
-            return None
-        
-        # Intenta decodificar el JSON
-        return response.json()
-
-    except json.JSONDecodeError:
-        st.error("Error al decodificar la respuesta de la API de Wazuh CTI. La API no devolvió un JSON válido.")
-        return None
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error de conexión con la API de Wazuh CTI: {e}")
-        return None
+        response.raise_for_status()
+        data = response.json()
+        st.success("Datos en vivo cargados correctamente desde la API de Wazuh CTI.")
+        return data
+    except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+        # Si hay cualquier error de conexión o de formato, usa los datos de respaldo.
+        print(f"API fetch failed: {e}") # Se imprime en el log de Streamlit para depuración
+        return get_fallback_data()
 
 def analizar_con_web_check(indicator, api_key):
     """
@@ -148,7 +154,7 @@ if data:
     col3.metric("Hashes Detectados 🧬", f"{hashes}")
 
     st.markdown("---")
-    st.subheader("Feed de Indicadores de Compromiso en Tiempo Real")
+    st.subheader("Feed de Indicadores de Compromiso")
     st.dataframe(df_filtered, use_container_width=True)
     st.markdown("---")
 
@@ -172,5 +178,7 @@ if data:
     else:
         st.warning("Las columnas 'type' o 'value' no se encuentran en los datos para el análisis.")
 else:
-    st.warning("No se pudieron cargar los datos de Wazuh CTI. Inténtalo de nuevo más tarde.")
+    # Este mensaje solo aparecería si get_fallback_data también falla, lo cual es muy improbable.
+    st.error("No se pudieron cargar datos en vivo ni los datos de ejemplo locales.")
+
 
